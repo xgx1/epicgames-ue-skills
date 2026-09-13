@@ -5,6 +5,8 @@ description: "Authoring or extending an Unreal Engine toolset: static AI-callabl
 
 # Create Toolset
 
+> **Platform**: this machine runs Linux (Arch) — `bash` blocks are the default and directly executable. Windows-only steps live in `Windows (PowerShell)` subsections and are not mixed into Linux instructions.
+
 You are authoring or extending an Unreal Engine toolset: a collection of static, AI-callable functions registered with the `ToolsetRegistry` and exposed through the MCP server. The goal is to expand the surface of things Claude can do inside the editor.
 
 ## Principles
@@ -231,7 +233,7 @@ TArray<UMyThing*> UMyToolset::FindThings(const FString& NamePattern)
 
 ### Tests
 
-Before running tests, compile your changes with `LiveCodingToolset.CompileLiveCoding`. It blocks until done and surfaces MSVC diagnostics. Fix any compile errors before proceeding.
+Before running tests, compile your changes with `LiveCodingToolset.CompileLiveCoding`. It blocks until done and surfaces compiler diagnostics (MSVC on Windows, clang on Linux). Fix any compile errors before proceeding.
 
 Every tool needs test coverage for both the success path and every error path. Write at least one test that confirms the tool does what it says, and a separate test for each condition that raises. Use the `BEGIN_DEFINE_SPEC` / `END_DEFINE_SPEC` pattern. Read existing tests in `Plugins/Experimental/Toolsets` for reference. Place tests near the toolset and follow the convention in the same plugin:
 
@@ -398,13 +400,40 @@ When iterating on Python tests, call `DiscoverTests` with `force_rediscover=true
 
 When no editor is running, the command line launches a headless editor instance, runs the specified tests, and exits. It's slower due to startup time (~30 seconds) but requires no running editor and is useful in CI or when the editor isn't available.
 
-Use `UnrealEditor-Cmd` with `-ExecCmds` to invoke the automation test system directly:
+Use `UnrealEditor-Cmd` with `-ExecCmds` to invoke the automation test system directly.
 
-``` bash
-UnrealEditor-Cmd.exe <Project>.uproject -ExecCmds="Automation RunTests AI.MyToolset;quit" -Unattended -NullRHI
+#### Linux (bash)
+
+`$UE_ROOT` is your engine install root — the directory containing `Engine/` (a source build or an installed engine). Locate it once:
+
+```bash
+# Derive the engine root from the binary. Depth 8 covers layouts such as <repo>/ue5.x/Engine/Binaries/Linux/;
+# adjust the search path/depth for this machine.
+ENGINE_BIN=$(find "$HOME" /opt -maxdepth 8 -type f -name UnrealEditor-Cmd 2>/dev/null | head -1)
+UE_ROOT="${ENGINE_BIN%/Engine/Binaries/Linux/UnrealEditor-Cmd}"
+echo "UE_ROOT=$UE_ROOT"   # empty = not found (e.g. a source build not compiled yet); use an absolute path instead
+```
+
+Installed engines are also registered in `~/.config/Epic/UnrealEngine/Install.ini`, which is useful as a cross-check. Verified on this machine: the `find` above resolves the engine root in about a second.
+
+Then run the tests:
+
+```bash
+"$UE_ROOT/Engine/Binaries/Linux/UnrealEditor-Cmd" <Project>.uproject \
+  -ExecCmds="Automation RunTests AI.MyToolset;quit" -Unattended
+```
+
+#### Windows (PowerShell)
+
+Windows-only path, kept verbatim (the engine root is typically `C:\Program Files\Epic Games\UE_x.y`; the line below assumes `UnrealEditor-Cmd.exe` is on `PATH`):
+
+```powershell
+UnrealEditor-Cmd.exe <Project>.uproject -ExecCmds="Automation RunTests AI.MyToolset;quit" -Unattended
 ```
 
 Replace `AI.MyToolset` with the test filter matching your toolset's spec name. Check how existing tests in the same plugin are run to confirm the right flags and filter prefix for the project.
+
+> `-NullRHI` note (resolved 2026-09-13): do **not** add `-NullRHI` to an automation test run — the local `unreal-run-automation-tests` evidence is that tests exit without executing when it is present, while `-unattended` alone is sufficient (68 tests, ~45-60 s). Reserve `-NullRHI` for asset-only commandlets that never need rendering.
 
 ## Reviewing Your Work
 
